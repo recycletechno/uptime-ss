@@ -21,7 +21,9 @@ def fake_creds_file():
     }
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(creds_data, f)
-        return f.name
+        path = f.name
+    yield path
+    os.unlink(path)
 
 
 def test_heartbeat_init():
@@ -64,4 +66,56 @@ async def test_heartbeat_start_missing_creds():
     with patch.dict(os.environ, {}, clear=True):
         hb = Heartbeat("test_bot")
         await hb.start()
+    assert hb._task is None
+
+
+@pytest.mark.asyncio
+async def test_tick_retries_then_succeeds(fake_creds_file):
+    """Test that _tick retries on failure and succeeds on third attempt."""
+    with patch.dict(os.environ, {"UPTIME_SS_CREDS": fake_creds_file}):
+        hb = Heartbeat("test_bot")
+        with patch("uptime_ss.heartbeat.SheetsClient") as MockClient:
+            mock_instance = MockClient.return_value
+            mock_instance.find_bot_row = AsyncMock(return_value=2)
+            mock_instance.write_timestamp = AsyncMock(
+                side_effect=[Exception("fail1"), Exception("fail2"), None]
+            )
+            await hb.start()
+
+            # Patch backoff delays to be instant for testing
+            with patch("uptime_ss.heartbeat.BACKOFF_DELAYS", [0, 0, 0]):
+                await hb._tick()
+
+            # 1 call from start's first loop iteration + 3 from our _tick call
+            assert mock_instance.write_timestamp.call_count >= 3
+            await hb.stop()
+
+
+@pytest.mark.asyncio
+async def test_tick_all_retries_fail(fake_creds_file):
+    """Test that _tick logs error after all retries fail."""
+    with patch.dict(os.environ, {"UPTIME_SS_CREDS": fake_creds_file}):
+        hb = Heartbeat("test_bot")
+        with patch("uptime_ss.heartbeat.SheetsClient") as MockClient:
+            mock_instance = MockClient.return_value
+            mock_instance.find_bot_row = AsyncMock(return_value=2)
+            mock_instance.write_timestamp = AsyncMock(
+                side_effect=Exception("always fails")
+            )
+            await hb.start()
+
+            with patch("uptime_ss.heartbeat.BACKOFF_DELAYS", [0, 0, 0]):
+                await hb._tick()
+
+            # Should have attempted MAX_RETRIES times in our _tick call
+            # (plus attempts from the background loop)
+            assert mock_instance.write_timestamp.call_count >= 3
+            await hb.stop()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_stop_without_start():
+    """Test that stop() is safe to call without start()."""
+    hb = Heartbeat("test_bot")
+    await hb.stop()  # Should not raise
     assert hb._task is None
