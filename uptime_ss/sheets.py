@@ -30,16 +30,30 @@ class SheetsClient:
             cred_data = json.load(f)
         self.creds = ServiceAccountCreds(scopes=SCOPES, **cred_data)
 
-    async def find_bot_row(self, bot_name: str) -> Optional[int]:
-        """Find the row number (1-indexed) for the given bot name in column A."""
+    async def _api_call(self, action: str, row: int = None, body: dict = None) -> dict:
+        """Execute a Google Sheets API call."""
         async with Aiogoogle(service_account_creds=self.creds) as aiog:
             sheets = await aiog.discover("sheets", "v4")
-            request = sheets.spreadsheets.values.get(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"{SHEET_NAME}!A:A",
-                valueRenderOption="FORMATTED_VALUE",
-            )
-            result = await aiog.as_service_account(request)
+            if action == "get":
+                request = sheets.spreadsheets.values.get(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{SHEET_NAME}!A:A",
+                    valueRenderOption="FORMATTED_VALUE",
+                )
+                return await aiog.as_service_account(request)
+            elif action == "update" and row is not None:
+                request = sheets.spreadsheets.values.update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"{SHEET_NAME}!B{row}",
+                    valueInputOption="USER_ENTERED",
+                    json=body,
+                )
+                await aiog.as_service_account(request)
+                return None
+
+    async def find_bot_row(self, bot_name: str) -> Optional[int]:
+        """Find the row number (1-indexed) for the given bot name in column A."""
+        result = await self._api_call("get")
 
         values = result.get("values", [])
         for i, row in enumerate(values):
@@ -51,13 +65,4 @@ class SheetsClient:
         """Write current UTC timestamp to column B of the given row."""
         now_utc = time.strftime("%d-%m-%Y %H:%M:%S", time.gmtime())
         body = {"values": [[now_utc]]}
-
-        async with Aiogoogle(service_account_creds=self.creds) as aiog:
-            sheets = await aiog.discover("sheets", "v4")
-            request = sheets.spreadsheets.values.update(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"{SHEET_NAME}!B{row}",
-                valueInputOption="USER_ENTERED",
-                json=body,
-            )
-            await aiog.as_service_account(request)
+        await self._api_call("update", row, body)

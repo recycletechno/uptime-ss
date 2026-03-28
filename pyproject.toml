@@ -13,3 +13,6 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/recycletechno/uptime-ss"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
