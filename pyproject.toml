@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "uptime-ss"
+version = "0.1.0"
+description = "Lightweight async heartbeat monitor via Google Sheets"
+requires-python = ">=3.10"
+dependencies = [
+    "aiogoogle>=5.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/recycletechno/uptime-ss"
