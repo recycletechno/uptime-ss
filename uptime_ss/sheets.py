@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -12,10 +13,11 @@ log = logging.getLogger(__name__)
 SPREADSHEET_ID = "1f0dQSyH5dtcFVadvj4XNB2fVrGcV6MMp99GkK7ygUgM"
 SHEET_NAME = "Control"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+DEFAULT_TIMEOUT = 30.0
 
 
 class SheetsClient:
-    def __init__(self):
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT):
         creds_path = os.environ.get("UPTIME_SS_CREDS")
         if not creds_path:
             raise ValueError(
@@ -29,9 +31,16 @@ class SheetsClient:
         with open(creds_path, "r") as f:
             cred_data = json.load(f)
         self.creds = ServiceAccountCreds(scopes=SCOPES, **cred_data)
+        self.timeout = timeout
 
     async def _api_call(self, action: str, row: int = None, body: dict = None) -> dict:
-        """Execute a Google Sheets API call."""
+        """Execute a Google Sheets API call with a hard timeout."""
+        return await asyncio.wait_for(
+            self._do_api_call(action, row, body),
+            timeout=self.timeout,
+        )
+
+    async def _do_api_call(self, action: str, row: int = None, body: dict = None) -> dict:
         async with Aiogoogle(service_account_creds=self.creds) as aiog:
             sheets = await aiog.discover("sheets", "v4")
             if action == "get":

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import tempfile
@@ -79,3 +80,30 @@ async def test_write_timestamp(sheets_client):
     call_args = mock_call.call_args
     assert call_args[0][0] == "update"
     assert call_args[0][1] == 3
+
+
+def test_timeout_default(fake_creds_file):
+    with patch.dict(os.environ, {"UPTIME_SS_CREDS": fake_creds_file}):
+        client = SheetsClient()
+    assert client.timeout == 30.0
+
+
+def test_timeout_configurable(fake_creds_file):
+    with patch.dict(os.environ, {"UPTIME_SS_CREDS": fake_creds_file}):
+        client = SheetsClient(timeout=7.5)
+    assert client.timeout == 7.5
+
+
+@pytest.mark.asyncio
+async def test_api_call_times_out_on_hang(fake_creds_file):
+    """_api_call raises TimeoutError when inner call hangs past the timeout."""
+    with patch.dict(os.environ, {"UPTIME_SS_CREDS": fake_creds_file}):
+        client = SheetsClient(timeout=0.05)
+
+    async def hang(action, row=None, body=None):
+        await asyncio.sleep(10)
+
+    client._do_api_call = hang
+
+    with pytest.raises(asyncio.TimeoutError):
+        await client._api_call("get")

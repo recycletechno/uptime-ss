@@ -66,25 +66,37 @@ That's it. The bot updates its timestamp every N minutes. If it stops, you get a
 
 ## API
 
-### `Heartbeat(bot_name, interval_minutes=5)`
+### `Heartbeat(bot_name, interval_minutes=5, timeout=30.0)`
 
 - `bot_name` (str): must match column A in the Google Sheet
 - `interval_minutes` (int): how often to send heartbeat (default: 5)
+- `timeout` (float): per-request hard timeout in seconds for each Google Sheets API call (default: 30). Prevents a stuck HTTP connection from silently freezing the heartbeat.
 
 ### `await hb.start()`
 
-Loads credentials, finds the bot's row, starts background heartbeat task.
+Loads credentials, finds the bot's row, starts background heartbeat task and an internal watchdog.
 Does nothing (logs error) if credentials are missing or bot not found in sheet.
 
 ### `await hb.stop()`
 
-Stops the background heartbeat task.
+Stops the background heartbeat task and the watchdog.
+
+### `hb.last_success_at`
+
+`datetime` (UTC) of the most recent successful tick, or `None` if none has happened yet. Useful for exposing health in your own `/health` endpoint.
+
+### `hb.is_healthy`
+
+`True` when the last successful tick was within `2 * interval_minutes`, `False` otherwise (including before the first tick).
 
 ## Error Handling
 
 - Missing credentials or bot not in sheet: logs error, heartbeat doesn't start, bot continues running
-- Network/API errors during heartbeat: retries 3 times with backoff (5s, 15s, 45s), then waits for next interval
-- Never crashes the host bot
+- Network/API errors during a tick: retries up to 3 times with jittered backoff (~5s, ~15s between attempts), then waits for the next interval. The final attempt does not sleep after failing.
+- Per-request timeout: each Sheets API call is wrapped in `asyncio.wait_for(..., timeout=...)`, so a hung connection raises `TimeoutError` and is retried like any other exception.
+- Any unexpected exception inside the tick loop is caught and logged with a full traceback — the background task cannot die silently.
+- Watchdog: if no tick has succeeded for `2 * interval_minutes`, a `WARNING` is logged each interval so a stuck heartbeat is visible in logs even without the external sheet monitor.
+- Never crashes the host bot.
 
 ## Google Apps Script
 

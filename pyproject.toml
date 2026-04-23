@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uptime-ss"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightweight async heartbeat monitor via Google Sheets"
 requires-python = ">=3.9"
 dependencies = [
